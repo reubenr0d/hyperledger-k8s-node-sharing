@@ -3,6 +3,7 @@ package chaincode
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
@@ -23,12 +24,13 @@ type Asset struct {
 
 // UsageSlice describes a K8s usage block that
 type UsageSlice struct {
-	ID        string  `json:"id"`
-	Owner     string  `json:"owner_id"`
-	Consumer  string  `json:"consumer_id"`
-	CPUMins   float64 `json:"cpu_mins"`
-	RAMMins   float64 `json:"ram_mins"`
-	Timestamp int     `json:"epoch"`
+	ID         string  `json:"id"`
+	Owner      string  `json:"owner_id"`
+	Consumer   string  `json:"consumer_id"`
+	K8sCPUMins float64 `json:"k8s_cpu_mins"`
+	K8sRAMMins float64 `json:"k8s_ram_mins"`
+	Timestamp  int     `json:"epoch"`
+	Paid       bool    `json:"is_paid"`
 }
 
 // TransferUsageSlice checks for new usage and transfers slice from owner to consumer
@@ -42,21 +44,23 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 	ramMins := 145.02
 	timestamp := 635783233
 
-	//check if there is any usage in the last block
+	//check if there is any usage since the last update
 	if cpuMins <= 0 && ramMins <= 0 {
 		return fmt.Errorf("there is no resource to log since last sync")
 	}
 
+	id := ctx.GetStub().GetTxID()
 	slice := UsageSlice{
-		ID:        "sfsafsr",
-		Owner:     owner,
-		Consumer:  consumer,
-		CPUMins:   cpuMins,
-		RAMMins:   ramMins,
-		Timestamp: timestamp,
+		ID:         id,
+		Owner:      owner,
+		Consumer:   consumer,
+		K8sCPUMins: cpuMins,
+		K8sRAMMins: ramMins,
+		Timestamp:  timestamp,
+		Paid:       false,
 	}
 
-	err := WriteUsageSliceToState(ctx, "sfsafsr", slice)
+	err := WriteUsageSliceToState(ctx, slice)
 	if err != nil {
 		return err
 	}
@@ -64,43 +68,20 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 }
 
 // WriteUsageSliceToState writes a UsageSlice to the state
-func WriteUsageSliceToState(ctx contractapi.TransactionContextInterface, id string, slice UsageSlice) error {
+func WriteUsageSliceToState(ctx contractapi.TransactionContextInterface, slice UsageSlice) error {
 	sliceJSON, err := json.Marshal(slice)
 	if err != nil {
 		return err
 	}
 
-	err = ctx.GetStub().PutState(id, sliceJSON)
+	//Create composite ID of owner, consumer, timestamp so that it easy while getting state
+	sliceCompositeKey, _ := ctx.GetStub().CreateCompositeKey("UsageSlice", []string{slice.Owner, slice.Consumer, strconv.FormatBool(slice.Paid)}) // forammted bool to string as only accept strings in arrray
+
+	// add to state
+	err = ctx.GetStub().PutState(sliceCompositeKey, sliceJSON)
 	if err != nil {
 		return fmt.Errorf("failed to put to world state. %v", err)
 	}
-
-	return nil
-}
-
-// InitLedger adds a base set of assets to the ledger
-func (s *SmartContract) InitLedger(ctx contractapi.TransactionContextInterface) error {
-	assets := []Asset{
-		{ID: "asset1", Color: "blue", Size: 5, Owner: "Tomoko", AppraisedValue: 300},
-		{ID: "asset2", Color: "red", Size: 5, Owner: "Brad", AppraisedValue: 400},
-		{ID: "asset3", Color: "green", Size: 10, Owner: "Jin Soo", AppraisedValue: 500},
-		{ID: "asset4", Color: "yellow", Size: 10, Owner: "Max", AppraisedValue: 600},
-		{ID: "asset5", Color: "black", Size: 15, Owner: "Adriana", AppraisedValue: 700},
-		{ID: "asset6", Color: "white", Size: 15, Owner: "Michel", AppraisedValue: 800},
-	}
-
-	for _, asset := range assets {
-		assetJSON, err := json.Marshal(asset)
-		if err != nil {
-			return err
-		}
-
-		err = ctx.GetStub().PutState(asset.ID, assetJSON)
-		if err != nil {
-			return fmt.Errorf("failed to put to world state. %v", err)
-		}
-	}
-
 	return nil
 }
 
@@ -215,9 +196,8 @@ func (s *SmartContract) TransferAsset(ctx contractapi.TransactionContextInterfac
 
 // GetAllAssets returns all assets found in world state
 func (s *SmartContract) GetAllAssets(ctx contractapi.TransactionContextInterface) ([]*UsageSlice, error) {
-	// range query with empty string for startKey and endKey does an
-	// open-ended query of all assets in the chaincode namespace.
-	resultsIterator, err := ctx.GetStub().GetStateByRange("", "")
+	// open-ended query of all UsageSlices in the chaincode namespace.
+	resultsIterator, err := ctx.GetStub().GetStateByPartialCompositeKey("UsageSlice", []string{})
 	if err != nil {
 		return nil, err
 	}
