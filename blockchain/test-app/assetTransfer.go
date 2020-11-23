@@ -75,12 +75,20 @@ func main() {
 		log.Fatalf("Failed to Submit transaction: %v", err)
 	}
 	log.Println(string(result))
-	// log.Println("--> Submit Transaction: InitLedger, function creates the initial set of assets on the ledger")
-	// result, err := contract.SubmitTransaction("InitLedger")
-	// if err != nil {
-	// 	log.Fatalf("Failed to Submit transaction: %v", err)
-	// }
-	// log.Println(string(result))
+
+	log.Println("--> Evaluate Transaction: GetAllAssets, function returns all the current assets on the ledger")
+	result, err = contract.EvaluateTransaction("GetAllAssets")
+	if err != nil {
+		log.Fatalf("Failed to evaluate transaction: %v", err)
+	}
+	log.Println(string(result))
+
+	log.Println("--> Submit Transaction: TransferUsageSlice")
+	result, err = contract.SubmitTransaction("TransferUsageSlice", "abc", "xyz")
+	if err != nil {
+		log.Fatalf("Failed to Submit transaction: %v", err)
+	}
+	log.Println(string(result))
 
 	log.Println("--> Evaluate Transaction: GetAllAssets, function returns all the current assets on the ledger")
 	result, err = contract.EvaluateTransaction("GetAllAssets")
