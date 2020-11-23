@@ -36,12 +36,54 @@ type UsageSlice struct {
 // TransferUsageSlice checks for new usage and transfers slice from owner to consumer
 func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInterface, owner string, consumer string) error {
 	//TODO: check that either owner/consumer is executing this
+	id := ctx.GetStub().GetTxID()
 
-	//TODO: get current state of unpaid UsageSlice of from state
+	//get current state of unpaid UsageSlice of from state
+	currentSliceIterator, err := ctx.GetStub().GetStateByPartialCompositeKey("UsageSlice", []string{owner, consumer, "false"})
+	if err != nil {
+		return err
+	}
+	defer currentSliceIterator.Close()
 
-	//TODO: get new ram usage difference
-	cpuMins := 415.24
-	ramMins := 145.02
+	var currentSlice UsageSlice
+
+	//if no slice with the key exists, create it else get from state
+	if !currentSliceIterator.HasNext() {
+		currentSlice = UsageSlice{
+			ID:         id,
+			Owner:      owner,
+			Consumer:   consumer,
+			K8sCPUMins: 0.00,
+			K8sRAMMins: 0.00,
+			Timestamp:  0,
+			Paid:       false,
+		}
+	} else {
+		//get slice from state
+		currentSliceQueryResponse, err := currentSliceIterator.Next()
+		if err != nil {
+			return err
+		}
+
+		//make sure that there are no more unpaid slices, can remove this maybe
+		if currentSliceIterator.HasNext() {
+			return fmt.Errorf("Multiple UsageSlices with same key")
+		}
+
+		//parse reponse into object
+		err = json.Unmarshal(currentSliceQueryResponse.Value, &currentSlice)
+		if err != nil {
+			return err
+		}
+	}
+
+	//TODO: Get data from prometheus
+
+	//TODO: compute usage difference
+
+	//Add Values from previous state
+	cpuMins := currentSlice.K8sCPUMins + 415.24
+	ramMins := currentSlice.K8sRAMMins + 145.02
 	timestamp := 635783233
 
 	//check if there is any usage since the last update
@@ -49,7 +91,6 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 		return fmt.Errorf("there is no resource to log since last sync")
 	}
 
-	id := ctx.GetStub().GetTxID()
 	slice := UsageSlice{
 		ID:         id,
 		Owner:      owner,
@@ -60,7 +101,7 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 		Paid:       false,
 	}
 
-	err := WriteUsageSliceToState(ctx, slice)
+	err = WriteUsageSliceToState(ctx, slice)
 	if err != nil {
 		return err
 	}

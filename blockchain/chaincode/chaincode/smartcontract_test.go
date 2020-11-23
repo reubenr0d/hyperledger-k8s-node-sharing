@@ -28,19 +28,19 @@ type stateQueryIterator interface {
 	shim.StateQueryIteratorInterface
 }
 
-func TestInitLedger(t *testing.T) {
-	chaincodeStub := &mocks.ChaincodeStub{}
-	transactionContext := &mocks.TransactionContext{}
-	transactionContext.GetStubReturns(chaincodeStub)
+// func TestInitLedger(t *testing.T) {
+// 	chaincodeStub := &mocks.ChaincodeStub{}
+// 	transactionContext := &mocks.TransactionContext{}
+// 	transactionContext.GetStubReturns(chaincodeStub)
 
-	assetTransfer := chaincode.SmartContract{}
-	err := assetTransfer.InitLedger(transactionContext)
-	require.NoError(t, err)
+// 	assetTransfer := chaincode.SmartContract{}
+// 	err := assetTransfer.InitLedger(transactionContext)
+// 	require.NoError(t, err)
 
-	chaincodeStub.PutStateReturns(fmt.Errorf("failed inserting key"))
-	err = assetTransfer.InitLedger(transactionContext)
-	require.EqualError(t, err, "failed to put to world state. failed inserting key")
-}
+// 	chaincodeStub.PutStateReturns(fmt.Errorf("failed inserting key"))
+// 	err = assetTransfer.InitLedger(transactionContext)
+// 	require.EqualError(t, err, "failed to put to world state. failed inserting key")
+// }
 
 func TestTransferUsageSlice(t *testing.T) {
 	chaincodeStub := &mocks.ChaincodeStub{}
