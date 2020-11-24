@@ -3,6 +3,8 @@ package chaincode
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strconv"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
@@ -26,6 +28,8 @@ type UsageSlice struct {
 
 // TransferUsageSlice checks for new usage and transfers slice from owner to consumer
 func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInterface, owner string, consumer string) error {
+	PrometheusBaseURI := "http://192.168.0.181:3080/api/v1/"
+
 	//TODO: check that either owner/consumer is executing this
 	id := ctx.GetStub().GetTxID()
 
@@ -68,7 +72,16 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 		}
 	}
 
-	//TODO: Get data from prometheus
+	// Get data from prometheus
+	resp, err := http.Get(fmt.Sprintf("%squery_range?query=container_memory_usage_bytes&start=%d&end=1606229448.118&step=1&_=1606228308725",
+		PrometheusBaseURI,
+		currentSlice.Timestamp))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	prometheusResp, err := ioutil.ReadAll(resp.Body)
+	return fmt.Errorf(string(prometheusResp))
 
 	//TODO: compute usage difference
 
