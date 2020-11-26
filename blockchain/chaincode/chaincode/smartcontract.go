@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+	"github.com/tidwall/gjson"
 )
 
 // SmartContract provides functions for managing an Asset
@@ -22,13 +23,24 @@ type UsageSlice struct {
 	Consumer   string  `json:"consumer_id"`
 	K8sCPUMins float64 `json:"k8s_cpu_mins"`
 	K8sRAMMins float64 `json:"k8s_ram_mins"`
-	Timestamp  int     `json:"epoch"`
+	Timestamp  float64 `json:"epoch"`
 	Paid       bool    `json:"is_paid"`
 }
+
+// PrometheusBaseURI - local peer Prometheus path
+const PrometheusBaseURI = "http://192.168.0.181:3080/api/v1/"
+
+// ORG1K8sNamespace - k8s Namespace for ORG1
+const ORG1K8sNamespace = "kube-system"
+
+// ORG2K8sNamespace - k8s Namespace for ORG2
+const ORG2K8sNamespace = "kube-system"
 
 // TransferUsageSlice checks for new usage and transfers slice from owner to consumer
 func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInterface, owner string, consumer string) error {
 	PrometheusBaseURI := "http://192.168.0.181:3080/api/v1/"
+	ORG1K8sNamespace := "kube-system"
+	// ORG2K8sNamespace := "org-2"
 
 	//TODO: check that either owner/consumer is executing this
 	id := ctx.GetStub().GetTxID()
@@ -72,27 +84,24 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 		}
 	}
 
-	// Get data from prometheus
-	resp, err := http.Get(fmt.Sprintf("%squery_range?query=container_memory_usage_bytes&start=%d&end=1606229448.118&step=1&_=1606228308725",
+	// Get CPU data of Pods from Prometheus
+	prometheusResp, err := GetRequest(fmt.Sprintf("%squery?query=container_cpu_user_seconds_total{namespace=\"%s\"}",
 		PrometheusBaseURI,
-		currentSlice.Timestamp))
-	if err != nil {
-		return err
+		ORG1K8sNamespace))
+	//parse JSON
+	timestamp := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.0"))
+	podsDetails := gjson.Get(prometheusResp, "data.result")
+	cpuMins := 0.0
+	for _, podDetails := range gjson.Result.Array(podsDetails) {
+		cpuMins += gjson.Result.Float(gjson.Get(gjson.Result.String(podDetails), "value.1"))
 	}
-	defer resp.Body.Close()
-	prometheusResp, err := ioutil.ReadAll(resp.Body)
-	return fmt.Errorf(string(prometheusResp))
 
-	//TODO: compute usage difference
-
-	//Add Values from previous state
-	cpuMins := currentSlice.K8sCPUMins + 415.24
+	// TODO: Get RAM Usage Data of pods from Prometheus
 	ramMins := currentSlice.K8sRAMMins + 145.02
-	timestamp := 635783233
 
 	//check if there is any usage since the last update
-	if cpuMins <= 0 && ramMins <= 0 {
-		return fmt.Errorf("there is no resource to log since last sync")
+	if cpuMins-currentSlice.K8sCPUMins <= 0 && ramMins <= 0 {
+		return fmt.Errorf("there is no resource to log since last sync, usage has to be a positive number")
 	}
 
 	slice := UsageSlice{
@@ -110,6 +119,20 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 		return err
 	}
 	return nil
+}
+
+//GetRequest accepts query string and returns output string
+func GetRequest(query string) (string, error) {
+	resp, err := http.Get(query)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(respBody), nil
 }
 
 // WriteUsageSliceToState writes a UsageSlice to the state
