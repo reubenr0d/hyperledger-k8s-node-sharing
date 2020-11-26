@@ -105,7 +105,7 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 	ramMins = ramMins / 1000000
 
 	//check if there is any usage since the last update
-	if cpuMins-currentSlice.K8sCPUMins <= 0 && ramMins <= 0 {
+	if cpuMins-currentSlice.K8sCPUMins <= 0 && ramMins-currentSlice.K8sRAMMins <= 0 {
 		return fmt.Errorf("there is no resource to log since last sync, usage has to be a positive number")
 	}
 
