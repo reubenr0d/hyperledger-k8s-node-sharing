@@ -85,19 +85,24 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 	}
 
 	// Get CPU data of Pods from Prometheus
-	prometheusResp, err := GetRequest(fmt.Sprintf("%squery?query=container_cpu_user_seconds_total{namespace=\"%s\"}",
+	prometheusResp, err := GetRequest(fmt.Sprintf("%squery?query=sum(container_cpu_user_seconds_total{namespace=\"%s\"})",
 		PrometheusBaseURI,
 		ORG1K8sNamespace))
-	//parse JSON
+	//parse JSON, TODO: add error handling
 	timestamp := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.0"))
-	podsDetails := gjson.Get(prometheusResp, "data.result")
-	cpuMins := 0.0
-	for _, podDetails := range gjson.Result.Array(podsDetails) {
-		cpuMins += gjson.Result.Float(gjson.Get(gjson.Result.String(podDetails), "value.1"))
-	}
+	cpuMins := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.1"))
 
-	// TODO: Get RAM Usage Data of pods from Prometheus
-	ramMins := currentSlice.K8sRAMMins + 145.02
+	// Get RAM Usage Data of pods from Prometheus until CPU response timestamp
+	// Optimize to make this in a single call
+	prometheusResp, err = GetRequest(fmt.Sprintf("%squery?query=sum(sum_over_time(container_memory_usage_bytes{namespace=\"%s\"}[35y]))&timestmap=%f",
+		PrometheusBaseURI,
+		ORG1K8sNamespace,
+		timestamp))
+	//TODO: add error handling
+	ramMins := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.1"))
+
+	//TODO: Figure out units
+	ramMins = ramMins / 1000000
 
 	//check if there is any usage since the last update
 	if cpuMins-currentSlice.K8sCPUMins <= 0 && ramMins <= 0 {
