@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/tidwall/gjson"
@@ -23,7 +24,7 @@ type UsageSlice struct {
 	Consumer   string  `json:"consumer_id"`
 	K8sCPUMins float64 `json:"k8s_cpu_mins"`
 	K8sRAMMins float64 `json:"k8s_ram_mins"`
-	Timestamp  float64 `json:"epoch"`
+	Timestamp  int64   `json:"epoch"`
 	Paid       bool    `json:"is_paid"`
 }
 
@@ -38,10 +39,6 @@ const ORG2K8sNamespace = "kube-system"
 
 // TransferUsageSlice checks for new usage and transfers slice from owner to consumer
 func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInterface, owner string, consumer string) error {
-	PrometheusBaseURI := "http://192.168.0.181:3080/api/v1/"
-	ORG1K8sNamespace := "kube-system"
-	// ORG2K8sNamespace := "org-2"
-
 	//TODO: check that either owner/consumer is executing this
 	id := ctx.GetStub().GetTxID()
 
@@ -84,20 +81,37 @@ func (s *SmartContract) TransferUsageSlice(ctx contractapi.TransactionContextInt
 		}
 	}
 
+	// calculate timestamp of the last minute rather than latest, this is to make sure that the external request
+	// is idempotent so that it does not interfere with consensus
+	// TODO: Improve the logic to handle edge case
+	now := time.Now()
+	_, _, secs := now.Clock()
+	timestamp := now.Local().Add(-(time.Second * time.Duration(secs))).Unix()
+
+	fmt.Println("then:", timestamp)
+
 	// Get CPU data of Pods from Prometheus
-	prometheusResp, err := GetRequest(fmt.Sprintf("%squery?query=sum(container_cpu_user_seconds_total{namespace=\"%s\"})",
+	prometheusResp, err := GetRequest(fmt.Sprintf("%squery?query=sum(container_cpu_user_seconds_total{namespace=\"%s\"})&timestmap=%d",
 		PrometheusBaseURI,
-		ORG1K8sNamespace))
+		ORG1K8sNamespace,
+		timestamp))
+	if err != nil {
+		return err
+	}
+
 	//parse JSON, TODO: add error handling
-	timestamp := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.0"))
+	// timestamp := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.0"))
 	cpuMins := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.1"))
 
 	// Get RAM Usage Data of pods from Prometheus until CPU response timestamp
 	// Optimize to make this in a single call
-	prometheusResp, err = GetRequest(fmt.Sprintf("%squery?query=sum(sum_over_time(container_memory_usage_bytes{namespace=\"%s\"}[35y]))&timestmap=%f",
+	prometheusResp, err = GetRequest(fmt.Sprintf("%squery?query=sum(sum_over_time(container_memory_usage_bytes{namespace=\"%s\"}[35y]))&timestmap=%d",
 		PrometheusBaseURI,
 		ORG1K8sNamespace,
 		timestamp))
+	if err != nil {
+		return err
+	}
 	//TODO: add error handling
 	ramMins := gjson.Result.Float(gjson.Get(prometheusResp, "data.result.0.value.1"))
 
